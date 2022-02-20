@@ -19,7 +19,7 @@ by Siep de Vries
  F = A = CLEAR RESULT<br>
  AD = R = REMAINDER OF LAST DIVISION<br>
  DA = I = NUMBER STORED IN MEMORY<br>
- \+ = C = NUMBER FROM MEMORY<br>
+ \+ = O = NUMBER FROM MEMORY *typo in the manual*<br>
  PC = % = CALCULATE PERCENTAGE<br>
  GO = C = CLEAR RESULT<br>
 
