@@ -101,7 +101,7 @@ nocler:  cmp     #$25
          bcs     problm
 noper:   cmp     #$52
          bne     norep
-         ldx     #$82
+         ldx     #$85
          jsr     load
 norep:   jmp     getinp
 
