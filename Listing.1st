@@ -1,0 +1,413 @@
+ca65 V2.19 - Git 4f87c7c
+Main file   : .\calc_mit_defs_test.S
+Current file: .\calc_mit_defs_test.S
+
+000000r 1               ; Target assembler: cc65 v2.18.0 [--target none -C calc_0-ende.bin_cc65.cfg]
+000000r 1               ;***************************************
+000000r 1               ;*  THE FOLLOWING PROGRAM IS           *
+000000r 1               ;*  POCKET CALCULATOR                  *
+000000r 1               ;*                                     *
+000000r 1               ;*  INPUT/OUTPUT IS EITHER TELETYPE    *
+000000r 1               ;*  OR KIM KEYBOARD AND DISPLAY        *
+000000r 1               ;*                                     *
+000000r 1               ;*  INPUT IS GIVEN BY PRESSING THE     *
+000000r 1               ;*  KEYS FOR A DECIMAL NUMBER          *
+000000r 1               ;*  FOLLOWED BY A FUNCTIONKEY          *
+000000r 1               ;*                                     *
+000000r 1               ;*  FUNCTIONS:                         *
+000000r 1               ;*  A = + = ADD NUMBER TO RESULT       *
+000000r 1               ;*  B = - = SUBTRACT NUMBER FROM       *
+000000r 1               ;* RESULT                              *
+000000r 1               ;*  C = * = MULTIPLY RESULT BY NUMBER  *
+000000r 1               ;*  D = / = DIVIDE RESULT BY NUMBER    *
+000000r 1               ;*  E = C = CLEAR INPUT NUMBER         *
+000000r 1               ;*  F = A = CLEAR RESULT               *
+000000r 1               ;*  AD = R = REMAINDER OF LAST         *
+000000r 1               ;* DIVISION                            *
+000000r 1               ;*  DA = I = NUMBER STORED IN MEMORY   *
+000000r 1               ;*  + = C = NUMBER FROM MEMORY         *
+000000r 1               ;*  PC = % = CALCULATE PERCENTAGE      *
+000000r 1               ;*  GO = C = CLEAR RESULT              *
+000000r 1               ;*  THE PROGRAM MAKES USE OF THE       *
+000000r 1               ;*  INTEGER CALCULATION PACKAGE        *
+000000r 1               ;*  'INTCAL' PARTNO 770110.            *
+000000r 1               ;*  A 3-BYTE VERSION IS USED.          *
+000000r 1               ;*  WHENEVER A DIFFERENT               *
+000000r 1               ;*  NUMBER OF BYTES PER                *
+000000r 1               ;*  NUMBER IS REQUIRED, THE            *
+000000r 1               ;*  DEFINITIONS CONTAINING             *
+000000r 1               ;*  SIZE, SIZEA, SIZEB, SIZEC,         *
+000000r 1               ;*  ACCU, ACCMSB, ACCLSB,              *
+000000r 1               ;*  DACCU, DACLSB AND LOADAD           *
+000000r 1               ;*  HAVE TO BE CHANGED TO THE          *
+000000r 1               ;*  PROPER VALUE IN RELATION TO        *
+000000r 1               ;*  SIZE AND THE PROGRAM MUST BE       *
+000000r 1               ;*  REASSEMBLED.                       *
+000000r 1               ;*                                     *
+000000r 1               ;*  AUTHOR: SIEP DE VRIES              *
+000000r 1               ;*     BRUGSTRAAT 32                   *
+000000r 1               ;*     LIMMEN (NH)                     *
+000000r 1               ;*     THE NETHERLANDS                 *
+000000r 1               ;***************************************
+000000r 1                        .setcpu "6502"
+000000r 1               ;kimroutines
+000000r 1               piadat   =       $1740
+000000r 1               nmitrp   =       $17fa
+000000r 1               initrp   =       $17fe
+000000r 1               getch    =       $1e5a
+000000r 1               outch    =       $1ea0
+000000r 1               scands   =       $1f1f
+000000r 1               getkey   =       $1f6a
+000000r 1               
+000000r 1               ;memlayout
+000000r 1               data     =       $f9
+000000r 1               memry 	 =       $7a
+000000r 1               numcar	 = 		 memry +3
+000000r 1               prev     =  	 numcar+1
+000000r 1               accu 	 =		 prev+1
+000000r 1               accmsb   = 		 accu-3
+000000r 1               acclsb 	 =		 accu+3
+000000r 1               daccu 	 =		 accu+6
+000000r 1               daclsb 	 =		 daccu+2
+000000r 1               loadad 	 =	     daccu+6
+000000r 1               accsav 	 = 		 loadad+2
+000000r 1               mulind 	 =		 accsav+1
+000000r 1               mulcnt   = 	     mulind+1
+000000r 1               count 	 =		 mulcnt+1
+000000r 1               
+000000r 1               ; definitions
+000000r 1               size 	 = 		$03
+000000r 1               sizea	 = 		size-1
+000000r 1               sizeb	 = 		size+3
+000000r 1               sizec    = 		size+2
+000000r 1               ;buttons
+000000r 1               plus	 =		$2b
+000000r 1               min		 = 		$2d
+000000r 1               maal	 =		$2a
+000000r 1               deel	 =		$2f
+000000r 1               clrnum	 =		$43
+000000r 1               clrall	 =		$41
+000000r 1               rep 	 = 		$52
+000000r 1               memin	 =		$49
+000000r 1               memout 	 =		$4f
+000000r 1               prcnt	 = 		$25
+000000r 1               vraag	 = 		$3f
+000000r 1               
+000000r 1               
+000000r 1                        .org    $0000
+000000  1  D8           start:   cld
+000001  1  78                    sei
+000002  1  A9 00                 lda     #$00
+000004  1  8D FE 17              sta     initrp
+000007  1  8D FA 17              sta     nmitrp
+00000A  1  A9 1C                 lda     #$1c
+00000C  1  8D FF 17              sta     $17ff
+00000F  1  8D FB 17              sta     $17fb
+000012  1  A0 00                 ldy     #$00
+000014  1  A2 74                 ldx     #null
+000016  1  20 13 03              jsr     load
+000019  1  A2 7A                 ldx     #memry
+00001B  1  20 27 03              jsr     store
+00001E  1  20 00 02     getinp:  jsr     input
+000021  1  A2 F9        weder:   ldx     #data
+000023  1  A0 00                 ldy     #$00
+000025  1  C9 2B                 cmp     #plus
+000027  1  D0 05                 bne     noadd
+000029  1  20 35 03              jsr     add
+00002C  1  B0 40                 bcs     problm
+00002E  1  C9 2D        noadd:   cmp     #min
+000030  1  D0 05                 bne     nomin
+000032  1  20 47 03              jsr     sub
+000035  1  B0 37                 bcs     problm
+000037  1  C9 2A        nomin:   cmp     #maal
+000039  1  D0 05                 bne     nomaal
+00003B  1  20 5F 03              jsr     mpy
+00003E  1  B0 2E                 bcs     problm
+000040  1  C9 2F        nomaal:  cmp     #deel
+000042  1  D0 05                 bne     nodeel
+000044  1  20 AC 03              jsr     dvi
+000047  1  B0 25                 bcs     problm
+000049  1  C9 41        nodeel:  cmp     #clrall
+00004B  1  D0 05                 bne     nocler
+00004D  1  A2 74        clear:   ldx     #null
+00004F  1  20 13 03              jsr     load
+000052  1  C9 25        nocler:  cmp     #prcnt
+000054  1  D0 0C                 bne     noper
+000056  1  20 5F 03              jsr     mpy
+000059  1  B0 13                 bcs     problm
+00005B  1  A2 77                 ldx     #eenhon
+00005D  1  20 AC 03              jsr     dvi
+000060  1  B0 0C                 bcs     problm
+000062  1  C9 52        noper:   cmp     #rep
+000064  1  D0 05                 bne     norep
+000066  1  A2 85                 ldx     #daccu
+000068  1  20 13 03              jsr     load
+00006B  1  4C 1E 00     norep:   jmp     getinp
+00006E  1               
+00006E  1  20 A8 02     problm:  jsr     error
+000071  1  4C 1E 00              jmp     getinp
+000074  1               
+000074  1  00           null:    .byte   $00
+000075  1  00                    .byte   $00
+000076  1  00                    .byte   $00
+000077  1  00           eenhon:  .byte   $00
+000078  1  01                    .byte   $01
+000079  1  00                    .byte   $00
+00007A  1               
+00007A  1               
+00007A  1               	     .org    $0200
+000200  1  A2 F9        input:   ldx     #data
+000202  1  A0 00                 ldy     #$00
+000204  1  20 27 03              jsr     store
+000207  1  20 92 02     weronp:  jsr     output
+00020A  1  A9 00                 lda     #$00
+00020C  1  85 7D                 sta     numcar
+00020E  1  20 71 02     werinp:  jsr     inchar
+000211  1  C9 43                 cmp     #clrnum
+000213  1  F0 EB                 beq     input
+000215  1  C9 49                 cmp     #$49
+000217  1  D0 0F                 bne     nomemi
+000219  1  A5 F9                 lda     data
+00021B  1  85 7A                 sta     memry
+00021D  1  A5 FA                 lda     data+1
+00021F  1  85 7B                 sta     memry+1
+000221  1  A5 FB                 lda     data+2
+000223  1  85 7C                 sta     accmsb
+000225  1  4C 07 02              jmp     weronp
+000228  1               
+000228  1  C9 4F        nomemi:  cmp     #$4f
+00022A  1  D0 0F                 bne     tesdec
+00022C  1  A5 7A                 lda     memry
+00022E  1  85 F9                 sta     data
+000230  1  A5 7B                 lda     memry+1
+000232  1  85 FA                 sta     data+1
+000234  1  A5 7C                 lda     accmsb
+000236  1  85 FB                 sta     data+2
+000238  1  4C 07 02              jmp     weronp
+00023B  1               
+00023B  1  C9 30        tesdec:  cmp     #$30
+00023D  1  10 01                 bpl     godec
+00023F  1  60           nodec:   rts
+000240  1               
+000240  1  C9 3A        godec:   cmp     #$3a
+000242  1  10 FB                 bpl     nodec
+000244  1  A6 7D                 ldx     numcar
+000246  1  D0 08                 bne     notfrs
+000248  1  A0 00                 ldy     #$00
+00024A  1  84 F9                 sty     data
+00024C  1  84 FA                 sty     data+1
+00024E  1  84 FB                 sty     data+2
+000250  1  38           notfrs:  sec
+000251  1  E9 30                 sbc     #$30
+000253  1  2A                    rol     A
+000254  1  2A                    rol     A
+000255  1  2A                    rol     A
+000256  1  2A                    rol     A
+000257  1  A2 04                 ldx     #$04
+000259  1  2A           rolwer:  rol     A
+00025A  1  26 F9                 rol     data
+00025C  1  26 FA                 rol     data+1
+00025E  1  26 FB                 rol     data+2
+000260  1  CA                    dex
+000261  1  D0 F6                 bne     rolwer
+000263  1  E6 7D                 inc     numcar
+000265  1  A5 7D                 lda     numcar
+000267  1  C9 07                 cmp     #$07
+000269  1  30 A3                 bmi     werinp
+00026B  1  20 A8 02              jsr     error
+00026E  1  4C 00 02              jmp     input
+000271  1               
+000271  1  A9 01        inchar:  lda     #$01
+000273  1  2C 40 17              bit     piadat
+000276  1  F0 16                 beq     ttyin
+000278  1  20 1F 1F     punta:   jsr     scands
+00027B  1  D0 FB                 bne     punta
+00027D  1  20 1F 1F     puntb:   jsr     scands
+000280  1  F0 FB                 beq     puntb
+000282  1  20 6A 1F              jsr     getkey
+000285  1  C9 15                 cmp     #$15
+000287  1  10 EF                 bpl     punta
+000289  1  AA                    tax
+00028A  1  BD FD 03              lda     asctab,x
+00028D  1  60                    rts
+00028E  1               
+00028E  1  20 5A 1E     ttyin:   jsr     getch
+000291  1  60                    rts
+000292  1               
+000292  1  A9 01        output:  lda     #$01
+000294  1  2C 40 17              bit     piadat
+000297  1  F0 01                 beq     itstty
+000299  1  60                    rts
+00029A  1               
+00029A  1  A2 02        itstty:  ldx     #sizea
+00029C  1  B5 F9        wtyp:    lda     data,x
+00029E  1  20 3B 1E              jsr     $1e3b
+0002A1  1  CA                    dex
+0002A2  1  10 F8                 bpl     wtyp
+0002A4  1  20 2F 1E     outyp:   jsr     $1e2f
+0002A7  1  60                    rts
+0002A8  1               
+0002A8  1  A9 01        error:   lda     #$01
+0002AA  1  2C 40 17              bit     piadat
+0002AD  1  F0 0A                 beq     ttyerr
+0002AF  1  A2 02                 ldx     #sizea
+0002B1  1  A9 FF                 lda     #$ff
+0002B3  1  95 7F        setful:  sta     accu,x
+0002B5  1  CA                    dex
+0002B6  1  10 FB                 bpl     setful
+0002B8  1  60                    rts
+0002B9  1               
+0002B9  1  A9 3F        ttyerr:  lda     #vraag
+0002BB  1  20 A0 1E              jsr     outch
+0002BE  1  4C A4 02              jmp     outyp
+0002C1  1               
+0002C1  1               
+0002C1  1               		 .org    $0300
+000300  1  86 8B        begalg:  stx     loadad
+000302  1  84 8C                 sty     loadad+1
+000304  1  85 8D                 sta     accsav
+000306  1  A2 02                 ldx     #sizea
+000308  1  A0 00                 ldy     #$00
+00030A  1  94 82        clrwer:  sty     acclsb,x
+00030C  1  CA                    dex
+00030D  1  10 FB                 bpl     clrwer
+00030F  1  A2 02                 ldx     #sizea
+000311  1  F8                    sed
+000312  1  60                    rts
+000313  1               
+000313  1  20 00 03     load:    jsr     begalg
+000316  1  B1 8B        nload:   lda     (loadad),y
+000318  1  99 7F 00              sta     accu,y
+00031B  1  C8                    iny
+00031C  1  CA                    dex
+00031D  1  10 F7                 bpl     nload
+00031F  1  D8           algout:  cld
+000320  1  A6 8B                 ldx     loadad
+000322  1  A4 8C                 ldy     loadad+1
+000324  1  A5 8D                 lda     accsav
+000326  1  60                    rts
+000327  1               
+000327  1  20 00 03     store:   jsr     begalg
+00032A  1  B9 7F 00     nstor:   lda     accu,y
+00032D  1  91 8B                 sta     (loadad),y
+00032F  1  C8                    iny
+000330  1  CA                    dex
+000331  1  10 F7                 bpl     nstor
+000333  1  30 EA                 bmi     algout
+000335  1               
+000335  1  20 00 03     add:     jsr     begalg
+000338  1  18                    clc
+000339  1  B9 7F 00     nadd:    lda     accu,y
+00033C  1  71 8B                 adc     (loadad),y
+00033E  1  99 7F 00              sta     accu,y
+000341  1  C8                    iny
+000342  1  CA                    dex
+000343  1  10 F4                 bpl     nadd
+000345  1  30 D8                 bmi     algout
+000347  1               
+000347  1  20 00 03     sub:     jsr     begalg
+00034A  1  38                    sec
+00034B  1  B9 7F 00     nsub:    lda     accu,y
+00034E  1  F1 8B                 sbc     (loadad),y
+000350  1  99 7F 00              sta     accu,y
+000353  1  C8                    iny
+000354  1  CA                    dex
+000355  1  10 F4                 bpl     nsub
+000357  1  B0 03                 bcs     clicar
+000359  1  38           setcar:  sec
+00035A  1  B0 C3                 bcs     algout
+00035C  1               
+00035C  1  18           clicar:  clc
+00035D  1  90 C0                 bcc     algout
+00035F  1               
+00035F  1  86 8B        mpy:     stx     loadad
+000361  1  84 8C                 sty     loadad+1
+000363  1  85 8D                 sta     accsav
+000365  1  A2 06                 ldx     #sizeb
+000367  1  B5 7E        wimpy:   lda     prev,x
+000369  1  95 84                 sta     acclsb+2,x
+00036B  1  A9 00                 lda     #$00
+00036D  1  95 7E                 sta     prev,x
+00036F  1  CA                    dex
+000370  1  D0 F5                 bne     wimpy
+000372  1  A8                    tay
+000373  1  A9 03                 lda     #size
+000375  1  85 8F                 sta     mulcnt
+000377  1  F8                    sed
+000378  1  B1 8B        outlup:  lda     (loadad),y
+00037A  1  85 8E                 sta     mulind
+00037C  1  F0 1C                 beq     noad
+00037E  1  18           peuter:  clc
+00037F  1  A9 06                 lda     #sizeb
+000381  1  85 90                 sta     count
+000383  1  A2 00                 ldx     #$00
+000385  1  B5 7F        weradd:  lda     accu,x
+000387  1  75 85                 adc     daccu,x
+000389  1  95 7F                 sta     accu,x
+00038B  1  E8                    inx
+00038C  1  C6 90                 dec     count
+00038E  1  D0 F5                 bne     weradd
+000390  1  B0 8D        ulgo:    bcs     algout
+000392  1  A5 8E                 lda     mulind
+000394  1  E9 00                 sbc     #$00
+000396  1  85 8E                 sta     mulind
+000398  1  D0 E4                 bne     peuter
+00039A  1  A2 05        noad:    ldx     #sizec
+00039C  1  B5 84        wustur:  lda     acclsb+2,x
+00039E  1  95 85                 sta     daccu,x
+0003A0  1  CA                    dex
+0003A1  1  D0 F9                 bne     wustur
+0003A3  1  86 85                 stx     daccu
+0003A5  1  C8                    iny
+0003A6  1  C6 8F                 dec     mulcnt
+0003A8  1  D0 CE                 bne     outlup
+0003AA  1  F0 B0        pulgo:   beq     clicar
+0003AC  1               
+0003AC  1  86 8B        dvi:     stx     loadad
+0003AE  1  84 8C                 sty     loadad+1
+0003B0  1  85 8D                 sta     accsav
+0003B2  1  A2 03                 ldx     #size
+0003B4  1  86 8E                 stx     mulind
+0003B6  1  A2 05                 ldx     #sizec
+0003B8  1  B5 7F        movdiv:  lda     accu,x
+0003BA  1  95 85                 sta     daccu,x
+0003BC  1  A9 00                 lda     #$00
+0003BE  1  95 7F                 sta     accu,x
+0003C0  1  CA                    dex
+0003C1  1  10 F5                 bpl     movdiv
+0003C3  1  A0 02        divlup:  ldy     #sizea
+0003C5  1  A6 8E                 ldx     mulind
+0003C7  1  B5 87        teswer:  lda     daclsb,x
+0003C9  1  D1 8B                 cmp     (loadad),y
+0003CB  1  90 29                 bcc     findiv
+0003CD  1  B5 87                 lda     daclsb,x
+0003CF  1  F0 21                 beq     nocomp
+0003D1  1  A6 8E                 ldx     mulind
+0003D3  1  A0 00                 ldy     #$00
+0003D5  1  A9 03                 lda     #size
+0003D7  1  85 8F                 sta     mulcnt
+0003D9  1  F8                    sed
+0003DA  1  B5 85        divre:   lda     daccu,x
+0003DC  1  F1 8B                 sbc     (loadad),y
+0003DE  1  95 85                 sta     daccu,x
+0003E0  1  E8                    inx
+0003E1  1  C8                    iny
+0003E2  1  C6 8F                 dec     mulcnt
+0003E4  1  D0 F4                 bne     divre
+0003E6  1  B5 7C                 lda     accmsb,x
+0003E8  1  C9 99                 cmp     #$99
+0003EA  1  B0 A4                 bcs     ulgo
+0003EC  1  69 01                 adc     #$01
+0003EE  1  95 7C                 sta     accmsb,x
+0003F0  1  D0 D1                 bne     divlup
+0003F2  1  CA           nocomp:  dex
+0003F3  1  88                    dey
+0003F4  1  10 D1                 bpl     teswer
+0003F6  1  C6 8E        findiv:  dec     mulind
+0003F8  1  10 C9                 bpl     divlup
+0003FA  1  4C 5C 03              jmp     clicar
+0003FD  1               
+0003FD  1  30 31 32 33  asctab:  .byte   "0123456789+-*/CARIO%A"
+000401  1  34 35 36 37  
+000405  1  38 39 2B 2D  
+000412  1               
