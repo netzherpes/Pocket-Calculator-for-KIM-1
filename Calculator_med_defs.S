@@ -21,7 +21,7 @@
 ;*  AD = R = REMAINDER OF LAST         *
 ;* DIVISION                            *
 ;*  DA = I = NUMBER STORED IN MEMORY   *
-;*  + = C = NUMBER FROM MEMORY         *
+;*  + = O = NUMBER FROM MEMORY         *
 ;*  PC = % = CALCULATE PERCENTAGE      *
 ;*  GO = C = CLEAR RESULT              *
 ;*  THE PROGRAM MAKES USE OF THE       *
