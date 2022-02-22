@@ -1,0 +1,468 @@
+0001   0000             ;  The following program is a pocket calculator                         
+0002   0000             ;                                              
+0003   0000             ;  Input/output is either teletype or KIM keyboard and display                 
+0004   0000             ;                                              
+0005   0000             ;  Input is given by pressing the keys for a decimal number                   
+0006   0000             ;  followed by a function key                   
+0007   0000             ;                                              
+0008   0000             ;  Functions                                  
+0009   0000             ;  A = + = add number to result                
+0010   0000             ;  B = - = subtract number from result         
+0011   0000             ;  C = * = multiply result by number           
+0012   0000             ;  D = / = divide result by number             
+0013   0000             ;  E = c = clear input number                  
+0014   0000             ;  F = A = clear result                        
+0015   0000             ; AD = r = remainder of last division          
+0016   0000             ; DA = i = number stored in memory             
+0017   0000             ;  + = c = number from memory                  
+0018   0000             ;  PC = % = calculate percentage               
+0019   0000             ;  GO = C = clear result                       
+0020   0000             ;
+0021   0000             ;  The program makes use of the integer calculation package                 
+0022   0000             ;  'intcal' partno 770110.                     
+0023   0000             ;  A 3-byte version is used.                   
+0024   0000             ;
+0025   0000             ;  whenever a different number of bytes per                         
+0026   0000             ;  number is required, the definitions containing                      
+0027   0000             ;  size, sizea, sizeb, sizec,                  
+0028   0000             ;  accu, accmsb, acclsb,                       
+0029   0000             ;  accsav, daclsb and loadad                    
+0030   0000             ;  have to be changed to the proper value in relation to                 
+0031   0000             ;  size and the program must be reassembled.                                
+0032   0000             ;                                              
+0033   0000             ;  Author Siep de Vries                       
+0034   0000             ;     Limmen (NH)                              
+0035   0000             ;     The Netherlands   
+0036   0000             ;
+0037   0000             ; Typed in and tested from listing in KIM Software 04/03/77, 2021-2022 Hans Otten                       
+0038   0000             ;
+0039   0000             ;
+0040   0000             ; Definitions
+0041   0000             ;
+0042   0000             intrp  = $17fe         ; Non-maskable interrupt trap
+0043   0000             nmitrp  = $17fa         ; interrupt break trap
+0044   0000             ;
+0045   0000             ; Calculator routines
+0046   0000             ; (incuded in thsi source, so omitted)
+0047   0000             ;
+0048   0000             ;
+0049   0000             ; General subroutines
+0050   0000             ;
+0051   0000             scands  = $1f1f         ; display data on LED display
+0052   0000             getkey  = $1f6a         ; read data form hex keypad
+0053   0000             outch   = $1ea0         ; Print character on TTY
+0054   0000             getch   = $1e5a         ; Read character from TTY
+0055   0000             crlf    = $1e2F         ; Print Carriage Return/LineFeed
+0056   0000             pribyt  = $1e3B         ; Print byte as 2 digits
+0057   0000             monitr  = $1c00         ; KIM-1 monitor entry point
+0058   0000             ;
+0059   0000             ; Page zero definitions
+0060   0000             ;
+0061   0003                     .org 3
+0062   0003 00          null    .byte $00
+0063   0004 00                  .byte $00
+0064   0005 00                  .byte $00
+0065   0006 00          eenhon  .byte $00
+0066   0007 01                  .byte $01
+0067   0008 00                  .byte $00
+0068   0009 00          memry   .byte $00
+0069   000A 00                  .byte $00
+0070   000B 00                  .byte $00
+0071   000C             numcar  = $1C
+0072   000C             prev    = numcar + 1
+0073   000C             
+0074   00DD                     .org $DD
+0075   00DD             
+0076   00DD 00          accu    .byte $00
+0077   00DE             accmsb  = accu - 3      ; accu - size 
+0078   00DE             acclsb  = accu + 3      ; accu + size
+0079   00DE             daccu   = accu + 6      ; accu + 2*size
+0080   00DE             daclsb  = daccu + 2     ; accsav + size -1
+0081   00DE             loadad  = daccu + 6     ; accsav + 2*size
+0082   00DE             accsav  = loadad + 2
+0083   00DE             mulind  = accsav + 1
+0084   00DE             mulcnt  = mulind + 1
+0085   00DE             count   = mulcnt + 1
+0086   00DE             data    = $F9 
+0087   00DE             ;
+0088   00DE             ; character set
+0089   00DE             ;
+0090   00DE             plus    = $2b
+0091   00DE             min     = $2d
+0092   00DE             maal    = $2a           ; multiply
+0093   00DE             deel    = $2f           ; divide
+0094   00DE             clrnum  = $43
+0095   00DE             clrall  = $41
+0096   00DE             rep     = $52
+0097   00DE             memin   = $49
+0098   00DE             memout  = $4f
+0099   00DE             prcnt   = $25
+0100   00DE             vraag   = $3f           ; question
+0101   00DE             piadat  = $1740         ; PIA to test KIM/TTY
+0102   00DE             ;
+0103   00DE             ;
+0104   00DE             ; start of program
+0105   00DE             ;
+0106   0000                     .org    $0000
+0107   0000 4C 1E 00            jmp calcul
+0108   0003             ;        
+0109   001E                     .org prev + 1
+0110   001E D8          calcul  cld              ; initialize
+0111   001F 78                  sei
+0112   0020 A9 00               lda #monitr & 256
+0113   0022 8D FE 17            sta intrp
+0114   0025 8D FA 17            sta nmitrp
+0115   0028 A9 1C               lda #monitr / 256
+0116   002A 8D FF 17            sta intrp + 1
+0117   002D 8D FA 17            sta nmitrp
+0118   0030 A0 00               ldy #$00        ; Result and memory are both zero
+0119   0032 A2 03               ldx #null
+0120   0034 20 13 03            jsr load
+0121   0037 A2 09               ldx #memry
+0122   0039 20 27 03            jsr store
+0123   003C 20 00 02    getinp  jsr input       ; read number + function
+0124   003F A2 F9       weder   ldx #data
+0125   0041 A0 00               ldy #$00
+0126   0043 C9 2B               cmp #plus
+0127   0045 D0 05               bne noadd
+0128   0047             ;        
+0129   0047 20 35 03            jsr add         ; add operand
+0130   004A B0 42               bcs  problm     ; carry set in error
+0131   004C C9 2D       noadd   cmp #min
+0132   004E D0 05               bne nomin
+0133   0050             ;
+0134   0050 20 47 03            jsr sub         ; subtract operand
+0135   0053 B0 39               bcs problm      ; carry clear is error 
+0136   0055 C9 2A       nomin   cmp #maal        ; multiply
+0137   0057 D0 05               bne nomaal
+0138   0059             ;
+0139   0059 20 5F 03            jsr mpy         ; multiply operand
+0140   005C B0 30               bcs problm      ; carry set is error
+0141   005E C9 2F       nomaal  cmp #deel
+0142   0060 D0 05               bne nodeel
+0143   0062             ;
+0144   0062 20 AC 03            jsr dvi         ; divide by operand
+0145   0065 B0 27               bcs problm      ; carry clear is error
+0146   0067 C9 41       nodeel  cmp #clrall     
+0147   0069 D0 05               bne nocler
+0148   006B A2 03       clear   ldx #null
+0149   006D 20 13 03            jsr load
+0150   0070 C9 25       nocler  cmp #prcnt
+0151   0072 D0 0C               bne noper
+0152   0074 20 5F 03            jsr mpy         ; multiply by percentage
+0153   0077 B0 15               bcs problm
+0154   0079 A2 06               ldx #eenhon
+0155   007B             ;
+0156   007B 20 AC 03            jsr dvi         ; divide by one hundred
+0157   007E B0 0E               bcs problm
+0158   0080             ;
+0159   0080 C9 52       noper   cmp #rep
+0160   0082 D0 05               bne norem
+0161   0084 A2 E3               ldx #daccu
+0162   0086 20 13 03            jsr load
+0163   0089 4C 3C 00    norem   jmp getinp
+0164   008C EA                  nop
+0165   008D EA                  nop
+0166   008E 20 BD 02    problm  jsr error
+0167   0091 4C 3C 00            jmp getinp
+0168   0094             ;
+0169   0200             		 .org 	 $0200
+0170   0200             ;
+0171   0200             ; subroutine to input data + function
+0172   0200             ;
+0173   0200             ; the result is shown,
+0174   0200             ; a number can be keyed in
+0175   0200             ; followed by a non-numerical key
+0176   0200             ; which causes a return
+0177   0200             ;
+0178   0200             ; clear input, store in memory 
+0179   0200             ; and get from memory are
+0180   0200             ; processed in this routine
+0181   0200             ;
+0182   0200             
+0183   0200 A2 F9       input   ldx #data       ; perform output
+0184   0202 A0 00               ldy #$00        ; first
+0185   0204 20 27 03            jsr store
+0186   0207 20 A7 02    weronp  jsr output      ; clear digit counter
+0187   020A A9 00               lda #$00
+0188   020C 85 1C               sta numcar
+0189   020E 20 71 02    werinp  jsr inchar      ; read next character
+0190   0211 C9 43               cmp #clrnum     ; clear number 
+0191   0213 F0 EB               beq input       ; re-display result
+0192   0215 C9 49               cmp #memin
+0193   0217 D0 0F               bne nomemi
+0194   0219 A5 F9               lda data        ; memory in display number
+0195   021B 85 09               sta  memry
+0196   021D A5 FA               lda data + 1
+0197   021F 85 0A               sta memry + 1
+0198   0221 A5 FB               lda data + 2
+0199   0223 85 0B               sta memry + 2
+0200   0225 4C 07 02            jmp weronp
+0201   0228 C9 4F       nomemi  cmp #memout     ; number comes from memory
+0202   022A D0 0F               bne tesdec
+0203   022C A5 09               lda memry       ; display it
+0204   022E 85 F9               sta data
+0205   0230 A5 0A               lda memry + 1
+0206   0232 85 FA               sta data + 1
+0207   0234 A5 0B               lda memry + 2
+0208   0236 85 FB               sta data + 2
+0209   0238 4C 07 02            jmp weronp
+0210   023B C9 30       tesdec  cmp #$30
+0211   023D 10 01               bpl godec
+0212   023F 60          nodec   rts             ; leave character unknown
+0213   0240 C9 3A       godec   cmp #$3a
+0214   0242 10 FB               bpl nodec
+0215   0244 A6 1C               ldx numcar      ; it is deciaml
+0216   0246 D0 08               bne notfrs
+0217   0248 A0 00               ldy #$00        ; first digit clears number
+0218   024A 84 F9               sty data
+0219   024C 84 FA               sty data + 1
+0220   024E 84 FB               sty data + 2
+0221   0250 38          notfrs  sec
+0222   0251 E9 30               sbc #$30        ; obtain value
+0223   0253 2A                  rol A           ; digit left positioned 
+0224   0254 2A                  rol A           ; in acumulator
+0225   0255 2A                  rol A
+0226   0256 2A                  rol A
+0227   0257 A2 04               ldx #$04
+0228   0259 2A          rolwer  rol A           ; shift digit in
+0229   025A 26 F9               rol data 
+0230   025C 26 FA               rol data + 1
+0231   025E 26 FB               rol data + 2
+0232   0260 CA                  dex
+0233   0261 D0 F6               bne rolwer
+0234   0263 E6 1C               inc numcar
+0235   0265 A5 1C               lda numcar
+0236   0267 C9 07               cmp #$07    ; test if too many digits
+0237   0269 30 A3               bmi werinp
+0238   026B 20 BD 02            jsr error
+0239   026E 4C 00 02            jmp input
+0240   0271             ;
+0241   0271             ; subroutine to read a character form KIM or TTY
+0242   0271             ; output is in ascii
+0243   0271             ;
+0244   0271 A9 01       inchar  lda #$01
+0245   0273 2C 40 17            bit piadat      ; test if KIM 
+0246   0276 F0 16               beq ttyin
+0247   0278 20 1F 1F    punt1   jsr scands      ; wait for no key
+0248   027B D0 FB               bne punt1
+0249   027D 20 1F 1F    punt2   jsr scands      ; wait for a key
+0250   0280 F0 FB               beq punt2
+0251   0282 20 6A 1F            jsr getkey
+0252   0285 C9 15               cmp #$15        
+0253   0287 10 EF               bpl punt1
+0254   0289 AA                  tax
+0255   028A BD 92 02            lda asctab,x    ; convert to ascii
+0256   028D 60                  rts
+0257   028E 20 5A 1E    ttyin   jsr getch       ; tty is easier
+0258   0291 60                   rts
+0259   0292 30          asctab  .byte '0'       ; 0
+0260   0293 31                  .byte '1'       ; 1
+0261   0294 32                  .byte '2'       ; 2
+0262   0295 33                  .byte '3'       ; 3
+0263   0296 34                  .byte '4'       ; 4
+0264   0297 35                  .byte '5'       ; 5
+0265   0298 36                  .byte '6'       ; 6
+0266   0299 37                  .byte '7'       ; 7
+0267   029A 38                  .byte '8'       ; 8
+0268   029B 39                  .byte '9'       ; 9
+0269   029C 2B                  .byte plus      ; A
+0270   029D 2D                  .byte min       ; B
+0271   029E 2A                  .byte maal      ; C
+0272   029F 2F                  .byte deel      ; D
+0273   02A0 43                  .byte clrnum    ; E
+0274   02A1 41                  .byte clrall    ; F
+0275   02A2 52                  .byte rep       ; AD
+0276   02A3 49                  .byte memin     ; DA
+0277   02A4 4F                  .byte memout    ; PC
+0278   02A5 25                  .byte prcnt     ; +
+0279   02A6 41                  .byte clrall    ; GO;
+0280   02A7             ;        
+0281   02A7             ; output number from data area to tty if connected
+0282   02A7             ;
+0283   02A7 A9 01       output  lda #$01
+0284   02A9 2C 40 17            bit piadat
+0285   02AC F0 01               beq itstty
+0286   02AE 60                  rts
+0287   02AF A2 02       itstty  ldx #$02
+0288   02B1 B5 F9       wtyp    lda data,x
+0289   02B3 20 3B 1E            jsr pribyt
+0290   02B6 CA                  dex
+0291   02B7 10 F8               bpl wtyp
+0292   02B9 20 2F 1E    outyp   jsr crlf
+0293   02BC 60                  rts
+0294   02BD             ;
+0295   02BD             ; error subroutine
+0296   02BD             ;
+0297   02BD A9 01       error   lda #$01
+0298   02BF 2C 40 17            bit piadat
+0299   02C2 F0 0A               beq ttyerr
+0300   02C4 A2 02               ldx #(size - 1)
+0301   02C6 A9 FF               lda #$ff
+0302   02C8             setful  
+0303   02C8 95 DD               sta accu,x
+0304   02CA CA                  dex
+0305   02CB 10 FB               bpl setful
+0306   02CD 60                  rts
+0307   02CE A9 3F       ttyerr  lda #vraag
+0308   02D0 20 A0 1E            jsr outch
+0309   02D3 4C B9 02            jmp outyp
+0310   02D6             
+0311   0300                     .org 	 $0300 
+0312   0300             ;
+0313   0300             ; integer package 'INTCAL'
+0314   0300             ; #770110 
+0315   0300             ;
+0316   0300             ; Copyright (C) 1977, 1982
+0317   0300             ; Westvries Computer Consulting B.V.
+0318   0300             ; The Netherlands      
+0319   0300             ;
+0320   0300             size    = 3
+0321   0300             sizea   = size - 1      ; size - 1
+0322   0300             sizeb   = size + 3      ; size * 2
+0323   0300             sizec   = size + 2      ; (size * 2) - 1 
+0324   0300             ;
+0325   0300             ; Functions provided:
+0326   0300             ; Load, Store, Add, Subtract, Multiply, Divide
+0327   0300             ;
+0328   0300 86 E9       begalg  stx loadad      ; General setup and initialize
+0329   0302 84 EA               sty loadad + 1
+0330   0304 85 EB               sta accsav
+0331   0306 A2 02               ldx #sizea
+0332   0308 A0 00               ldy #$00
+0333   030A 94 E0       clrwer  sty acclsb,x
+0334   030C CA                  dex
+0335   030D 10 FB               bpl clrwer
+0336   030F A2 02               ldx #sizea
+0337   0311 F8                  sed
+0338   0312 60                  rts
+0339   0313 20 00 03    load    jsr begalg      ; load into accu
+0340   0316 B1 E9       nload   lda (loadad),y
+0341   0318 99 DD 00            sta accu,y
+0342   031B C8                  iny
+0343   031C CA                  dex
+0344   031D 10 F7               bpl nload
+0345   031F D8          algout  cld             ; general exit
+0346   0320 A6 E9               ldx loadad      ; restore registers
+0347   0322 A4 EA               ldy loadad + 1
+0348   0324 A5 EB               lda accsav
+0349   0326 60                  rts
+0350   0327 20 00 03    store   jsr begalg      ; store from accu
+0351   032A B9 DD 00    nstor   lda accu,y
+0352   032D 91 E9               sta (loadad),y
+0353   032F C8                  iny
+0354   0330 CA                  dex
+0355   0331 10 F7               bpl nstor
+0356   0333 30 EA               bmi algout
+0357   0335 20 00 03    add     jsr begalg      ; add into accu
+0358   0338 18                  clc
+0359   0339 B9 DD 00    nadd    lda accu,y
+0360   033C 71 E9               adc (loadad),y
+0361   033E 99 DD 00            sta accu,y
+0362   0341 C8                  iny
+0363   0342 CA                  dex
+0364   0343 10 F4               bpl nadd
+0365   0345 30 D8               bmi algout
+0366   0347 20 00 03    sub     jsr begalg      ; subtract from accu
+0367   034A 38                  sec
+0368   034B B9 DD 00    nsub    lda accu,y
+0369   034E F1 E9               sbc (loadad),y
+0370   0350 99 DD 00            sta accu,y
+0371   0353 C8                  iny
+0372   0354 CA                  dex
+0373   0355 10 F4               bpl nsub
+0374   0357 B0 03               bcs clicar
+0375   0359 38          setcar  sec
+0376   035A B0 C3               bcs algout
+0377   035C 18          clicar  clc
+0378   035D 90 C0               bcc algout
+0379   035F 86 E9       mpy     stx loadad
+0380   0361 84 EA               sty loadad + 1
+0381   0363 85 EB               sta accsav
+0382   0365 A2 06               ldx #sizeb
+0383   0367 B5 DC       wimpy   lda accu - 1, X
+0384   0369 95 E2               sta daccu - 1,x
+0385   036B A9 00               lda #$00
+0386   036D 95 DC               sta accu - 1, X
+0387   036F CA                  dex
+0388   0370 D0 F5               bne wimpy
+0389   0372 A8                  tay
+0390   0373 A9 03               lda #size
+0391   0375 85 ED               sta mulcnt
+0392   0377 F8                  sed
+0393   0378 B1 E9       outlup  lda (loadad),y
+0394   037A 85 EC               sta mulind
+0395   037C F0 1C               beq noad
+0396   037E 18          peuter  clc
+0397   037F A9 06               lda #sizeb
+0398   0381 85 EE               sta count
+0399   0383 A2 00               ldx #$00
+0400   0385 B5 DD       weradd  lda accu,x
+0401   0387 75 E3               adc daccu,x
+0402   0389 95 DD               sta accu,x
+0403   038B E8                  inx
+0404   038C C6 EE               dec count
+0405   038E D0 F5               bne weradd
+0406   0390 B0 8D       ulgo    bcs algout
+0407   0392 A5 EC               lda mulind
+0408   0394 E9 00               sbc #$00
+0409   0396 85 EC               sta mulind
+0410   0398 D0 E4               bne peuter
+0411   039A A2 05       noad    ldx #sizec
+0412   039C B5 E2       wustur  lda daccu - 1,x
+0413   039E 95 E3               sta daccu,x
+0414   03A0 CA                  dex
+0415   03A1 D0 F9               bne wustur
+0416   03A3 86 E3               stx daccu
+0417   03A5 C8                  iny
+0418   03A6 C6 ED               dec mulcnt
+0419   03A8 D0 CE               bne outlup
+0420   03AA F0 B0       pulgo   beq clicar
+0421   03AC 86 E9       dvi     stx loadad
+0422   03AE 84 EA               sty loadad + 1
+0423   03B0 85 EB               sta accsav
+0424   03B2 A2 03               ldx #size
+0425   03B4 86 EC               stx mulind
+0426   03B6 A2 05               ldx #$05
+0427   03B8 B5 DD       movdiv  lda accu,x
+0428   03BA 95 E3               sta daccu,x
+0429   03BC A9 00               lda #$00
+0430   03BE 95 DD               sta accu,x
+0431   03C0 CA                  dex
+0432   03C1 10 F5               bpl movdiv
+0433   03C3 A0 02       divlup  ldy #sizea
+0434   03C5 A6 EC               ldx mulind
+0435   03C7 B5 E5       teswer  lda daclsb,x
+0436   03C9 D1 E9               cmp (loadad),y
+0437   03CB 90 29               bcc findiv
+0438   03CD B5 E5               lda daclsb,x
+0439   03CF F0 21               beq nocomp
+0440   03D1 A6 EC               ldx mulind
+0441   03D3 A0 00               ldy #$00
+0442   03D5 A9 03               lda #size
+0443   03D7 85 ED               sta mulcnt
+0444   03D9 F8                  sed
+0445   03DA B5 E3       divre   lda daccu,x
+0446   03DC F1 E9               sbc (loadad),y
+0447   03DE 95 E3               sta daccu,x
+0448   03E0 E8                  inx
+0449   03E1 C8                  iny
+0450   03E2 C6 ED               dec mulcnt
+0451   03E4 D0 F4               bne divre
+0452   03E6 B5 DA               lda accmsb,x
+0453   03E8 C9 99               cmp #$99
+0454   03EA B0 A4               bcs ulgo
+0455   03EC 69 01               adc #$01
+0456   03EE 95 DA               sta accmsb,x
+0457   03F0 D0 D1               bne divlup
+0458   03F2 CA          nocomp  dex
+0459   03F3 88                  dey
+0460   03F4 10 D1               bpl teswer
+0461   03F6 C6 EC       findiv  dec mulind
+0462   03F8 10 C9               bpl divlup
+0463   03FA 4C 5C 03            jmp clicar
+0464   03FD             
+0465   03FD             
+0466   03FD                    
+0467   03FD                             .end
+tasm: Number of errors = 0
